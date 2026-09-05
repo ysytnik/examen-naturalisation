@@ -15,41 +15,26 @@ const THEME_LABELS = {
 };
 
 let allQuestions = [];
-let session = {
-  mode: '',
-  questions: [],
-  index: 0,
-  answers: [],
-  isExam: false,
-};
+let session = { mode: '', questions: [], index: 0, answers: [], isExam: false };
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-async function init() {
+function init() {
   try {
-    if (window.QUESTIONS_DATA && window.QUESTIONS_DATA.length) {
-      allQuestions = window.QUESTIONS_DATA;
-    } else {
-      const res = await fetch('questions_nat.json');
-      allQuestions = await res.json();
-    }
+    allQuestions = window.QUESTIONS_DATA || [];
+    if (!allQuestions.length) throw new Error('no data');
     populateThemes();
     renderPersistentStats();
     registerSW();
     updateOfflineStatus();
   } catch (e) {
-    console.error('Erreur chargement questions:', e);
+    console.error(e);
     $('.mode-grid').innerHTML = '<p style="color:#ef4444">Erreur de chargement des questions.</p>';
   }
 
-  $$('.mode-btn').forEach((btn) => {
-    btn.addEventListener('click', () => startSession(btn.dataset.mode));
-  });
-
-  $('#btn-quit').addEventListener('click', () => {
-    if (confirm('Quitter la session en cours ?')) showScreen('home');
-  });
+  $$('.mode-btn').forEach((btn) => btn.addEventListener('click', () => startSession(btn.dataset.mode)));
+  $('#btn-quit').addEventListener('click', () => { if (confirm('Quitter ?')) showScreen('home'); });
   $('#btn-next').addEventListener('click', nextQuestion);
   $('#btn-finish').addEventListener('click', showResults);
   $('#btn-retry').addEventListener('click', () => startSession(session.mode));
@@ -57,13 +42,11 @@ async function init() {
 }
 
 function populateThemes() {
-  const themes = [...new Set(allQuestions.map((q) => q.t))].sort();
-  const select = $('#theme-select');
-  themes.forEach((t) => {
+  [...new Set(allQuestions.map((q) => q.t))].sort().forEach((t) => {
     const opt = document.createElement('option');
     opt.value = t;
     opt.textContent = THEME_LABELS[t] || t;
-    select.appendChild(opt);
+    $('#theme-select').appendChild(opt);
   });
 }
 
@@ -78,37 +61,16 @@ function shuffle(arr) {
 
 function startSession(mode) {
   const themeFilter = $('#theme-select').value;
-  let pool = themeFilter
-    ? allQuestions.filter((q) => q.t === themeFilter)
-    : [...allQuestions];
+  let pool = themeFilter ? allQuestions.filter((q) => q.t === themeFilter) : [...allQuestions];
+  if (pool.length < 5) { alert('Pas assez de questions pour ce thème.'); return; }
 
-  if (pool.length < 5) {
-    alert('Pas assez de questions pour ce thème. Choisissez un autre filtre.');
-    return;
-  }
+  let count, isExam = false;
+  if (mode === 'training') { count = Math.min(20, pool.length); }
+  else if (mode === 'training-all') { count = pool.length; }
+  else if (mode === 'exam-20') { count = Math.min(20, pool.length); isExam = true; }
+  else { count = Math.min(40, pool.length); isExam = true; }
 
-  let count;
-  let isExam = false;
-
-  if (mode === 'training') {
-    count = Math.min(20, pool.length);
-    isExam = false;
-  } else if (mode === 'exam-20') {
-    count = Math.min(20, pool.length);
-    isExam = true;
-  } else {
-    count = Math.min(40, pool.length);
-    isExam = true;
-  }
-
-  session = {
-    mode,
-    questions: shuffle(pool).slice(0, count),
-    index: 0,
-    answers: [],
-    isExam,
-  };
-
+  session = { mode, questions: shuffle(pool).slice(0, count), index: 0, answers: [], isExam };
   showScreen('quiz');
   renderQuestion();
 }
@@ -122,24 +84,18 @@ function showScreen(name) {
 function renderQuestion() {
   const q = session.questions[session.index];
   const total = session.questions.length;
-  const pct = ((session.index) / total) * 100;
-
-  $('#progress-bar').style.width = `${pct}%`;
+  $('#progress-bar').style.width = `${(session.index / total) * 100}%`;
   $('#progress-text').textContent = `${session.index + 1} / ${total}`;
   $('#theme-badge').textContent = THEME_LABELS[q.t] || q.t;
   $('#question-text').textContent = q.q;
-
-  const optsEl = $('#options');
-  optsEl.innerHTML = '';
-
+  $('#options').innerHTML = '';
   q.o.forEach((text, i) => {
     const btn = document.createElement('button');
     btn.className = 'option-btn';
     btn.innerHTML = `<span class="letter">${LETTERS[i]}</span><span>${text}</span>`;
     btn.addEventListener('click', () => selectAnswer(i));
-    optsEl.appendChild(btn);
+    $('#options').appendChild(btn);
   });
-
   $('#feedback').classList.add('hidden');
   $('#btn-next').classList.add('hidden');
   $('#btn-finish').classList.add('hidden');
@@ -148,62 +104,36 @@ function renderQuestion() {
 function selectAnswer(choice) {
   const q = session.questions[session.index];
   const isCorrect = choice === q.a;
-  const opts = $$('.option-btn');
-
-  opts.forEach((btn, i) => {
+  $$('.option-btn').forEach((btn, i) => {
     btn.disabled = true;
     if (i === q.a) btn.classList.add('correct');
     else if (i === choice && !isCorrect) btn.classList.add('wrong');
     else btn.classList.add('dimmed');
   });
-
-  session.answers.push({
-    questionIndex: session.index,
-    choice,
-    correct: isCorrect,
-    question: q,
-  });
+  session.answers.push({ questionIndex: session.index, choice, correct: isCorrect, question: q });
 
   if (session.isExam) {
-    const isLast = session.index >= session.questions.length - 1;
-    setTimeout(() => {
-      if (isLast) showResults();
-      else nextQuestion();
-    }, 400);
+    setTimeout(() => session.index >= session.questions.length - 1 ? showResults() : nextQuestion(), 400);
     return;
   }
 
-  const feedback = $('#feedback');
   const header = $('#feedback-header');
-  const explanation = $('#explanation');
-
-  feedback.classList.remove('hidden');
-
+  $('#feedback').classList.remove('hidden');
   if (isCorrect) {
     header.textContent = '✓ Bonne réponse !';
     header.className = 'feedback-header correct';
   } else {
-    header.textContent = `✗ Mauvaise réponse — La bonne réponse est ${LETTERS[q.a]} : ${q.o[q.a]}`;
+    header.textContent = `✗ Mauvaise réponse — ${LETTERS[q.a]} : ${q.o[q.a]}`;
     header.className = 'feedback-header wrong';
   }
-
-  explanation.textContent = q.r || 'Pas d\'explication disponible.';
-
-  const isLast = session.index >= session.questions.length - 1;
-  if (isLast) {
-    $('#btn-finish').classList.remove('hidden');
-  } else {
-    $('#btn-next').classList.remove('hidden');
-  }
+  $('#explanation').textContent = q.r || '';
+  (session.index >= session.questions.length - 1 ? $('#btn-finish') : $('#btn-next')).classList.remove('hidden');
 }
 
 function nextQuestion() {
   session.index++;
-  if (session.index >= session.questions.length) {
-    showResults();
-    return;
-  }
-  renderQuestion();
+  if (session.index >= session.questions.length) showResults();
+  else renderQuestion();
 }
 
 function showResults() {
@@ -211,7 +141,6 @@ function showResults() {
   const correct = session.answers.filter((a) => a.correct).length;
   const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
   const passed = pct >= PASS_THRESHOLD * 100;
-
   const circle = $('#score-circle');
   circle.className = `score-circle ${passed ? 'pass' : 'fail'}`;
   $('#score-value').textContent = `${pct}%`;
@@ -221,18 +150,17 @@ function showResults() {
     const needed = Math.ceil(total * PASS_THRESHOLD);
     $('#results-title').textContent = passed ? '🎉 Examen réussi !' : 'Examen non validé';
     $('#results-subtitle').textContent = passed
-      ? `Vous avez obtenu ${correct}/${total} (minimum requis : ${needed})`
-      : `Vous avez obtenu ${correct}/${total}. Minimum requis : ${needed} (${PASS_THRESHOLD * 100}%)`;
+      ? `${correct}/${total} (minimum : ${needed})`
+      : `${correct}/${total}. Minimum : ${needed} (${PASS_THRESHOLD * 100}%)`;
   } else {
     $('#results-title').textContent = 'Session terminée';
-    $('#results-subtitle').textContent = `${correct} bonnes réponses sur ${total} questions`;
+    $('#results-subtitle').textContent = `${correct} bonnes réponses sur ${total}`;
   }
 
   $('#stats-grid').innerHTML = `
     <div class="stat-card good"><div class="val">${correct}</div><div class="lbl">Correctes</div></div>
     <div class="stat-card bad"><div class="val">${total - correct}</div><div class="lbl">Incorrectes</div></div>
-    <div class="stat-card"><div class="val">${total}</div><div class="lbl">Total</div></div>
-  `;
+    <div class="stat-card"><div class="val">${total}</div><div class="lbl">Total</div></div>`;
 
   renderThemeBreakdown();
   renderReview();
@@ -248,107 +176,65 @@ function renderThemeBreakdown() {
     byTheme[t].total++;
     if (a.correct) byTheme[t].correct++;
   });
-
-  const container = $('#theme-breakdown');
   const entries = Object.entries(byTheme).sort((a, b) => a[0].localeCompare(b[0]));
-
-  if (entries.length === 0) {
-    container.innerHTML = '';
-    return;
-  }
-
-  container.innerHTML = '<h3>Par thème</h3>' + entries.map(([theme, stats]) => {
-    const pct = Math.round((stats.correct / stats.total) * 100);
-    const color = pct >= 80 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--error)';
-    return `
-      <div class="theme-row">
-        <span class="name">${THEME_LABELS[theme] || theme}</span>
-        <div class="bar-wrap"><div class="bar" style="width:${pct}%;background:${color}"></div></div>
-        <span class="pct">${stats.correct}/${stats.total}</span>
-      </div>`;
-  }).join('');
+  $('#theme-breakdown').innerHTML = entries.length
+    ? '<h3>Par thème</h3>' + entries.map(([theme, s]) => {
+        const pct = Math.round((s.correct / s.total) * 100);
+        const color = pct >= 80 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--error)';
+        return `<div class="theme-row"><span class="name">${THEME_LABELS[theme] || theme}</span>
+          <div class="bar-wrap"><div class="bar" style="width:${pct}%;background:${color}"></div></div>
+          <span class="pct">${s.correct}/${s.total}</span></div>`;
+      }).join('')
+    : '';
 }
 
 function renderReview() {
-  const list = $('#review-list');
-  list.innerHTML = session.answers.map((a, i) => {
+  $('#review-list').innerHTML = session.answers.map((a, i) => {
     const q = a.question;
-    const cls = a.correct ? 'correct-item' : 'wrong-item';
-    const userAns = q.o[a.choice] || '—';
-    const correctAns = q.o[q.a];
-    return `
-      <div class="review-item ${cls}">
-        <div class="q-num">Question ${i + 1} · ${THEME_LABELS[q.t] || q.t}</div>
-        <div class="q-text">${q.q}</div>
-        <div class="ans-line">Votre réponse : <strong>${LETTERS[a.choice]} — ${userAns}</strong></div>
-        ${!a.correct ? `<div class="ans-line">Bonne réponse : <strong>${LETTERS[q.a]} — ${correctAns}</strong></div>` : ''}
-        ${q.r ? `<div class="ans-line" style="margin-top:0.375rem">${q.r}</div>` : ''}
-      </div>`;
+    return `<div class="review-item ${a.correct ? 'correct-item' : 'wrong-item'}">
+      <div class="q-num">Q${i + 1} · ${THEME_LABELS[q.t] || q.t}</div>
+      <div class="q-text">${q.q}</div>
+      <div class="ans-line">Votre réponse : <strong>${LETTERS[a.choice]} — ${q.o[a.choice]}</strong></div>
+      ${!a.correct ? `<div class="ans-line">Bonne réponse : <strong>${LETTERS[q.a]} — ${q.o[q.a]}</strong></div>` : ''}
+      ${q.r ? `<div class="ans-line" style="margin-top:0.375rem">${q.r}</div>` : ''}
+    </div>`;
   }).join('');
 }
 
 function saveStats(correct, total, isExam, passed) {
-  const key = 'civique_stats';
-  const stats = JSON.parse(localStorage.getItem(key) || '{"sessions":[],"totalCorrect":0,"totalQuestions":0,"examsPassed":0,"examsTotal":0}');
-
-  stats.sessions.push({
-    date: new Date().toISOString(),
-    mode: session.mode,
-    correct,
-    total,
-    passed: isExam ? passed : null,
-  });
-
+  const stats = JSON.parse(localStorage.getItem('civique_stats') || '{"sessions":[],"totalCorrect":0,"totalQuestions":0,"examsPassed":0,"examsTotal":0}');
+  stats.sessions.push({ date: new Date().toISOString(), mode: session.mode, correct, total, passed: isExam ? passed : null });
   stats.totalCorrect += correct;
   stats.totalQuestions += total;
-  if (isExam) {
-    stats.examsTotal++;
-    if (passed) stats.examsPassed++;
-  }
-
+  if (isExam) { stats.examsTotal++; if (passed) stats.examsPassed++; }
   stats.sessions = stats.sessions.slice(-50);
-  localStorage.setItem(key, JSON.stringify(stats));
+  localStorage.setItem('civique_stats', JSON.stringify(stats));
 }
 
 function renderPersistentStats() {
   const stats = JSON.parse(localStorage.getItem('civique_stats') || 'null');
   const el = $('#stats-summary');
-  if (!stats || stats.sessions.length === 0) {
-    el.innerHTML = '';
-    return;
-  }
-
-  const globalPct = stats.totalQuestions > 0
-    ? Math.round((stats.totalCorrect / stats.totalQuestions) * 100)
-    : 0;
-
-  el.innerHTML = `
-    <h3>📊 Vos statistiques</h3>
-    <div class="stat-row"><span>Sessions jouées</span><span>${stats.sessions.length}</span></div>
-    <div class="stat-row"><span>Taux global</span><span>${globalPct}% (${stats.totalCorrect}/${stats.totalQuestions})</span></div>
-    ${stats.examsTotal > 0 ? `<div class="stat-row"><span>Examens blancs réussis</span><span>${stats.examsPassed}/${stats.examsTotal}</span></div>` : ''}
-  `;
+  if (!stats?.sessions?.length) { el.innerHTML = ''; return; }
+  const pct = Math.round((stats.totalCorrect / stats.totalQuestions) * 100);
+  el.innerHTML = `<h3>📊 Statistiques</h3>
+    <div class="stat-row"><span>Sessions</span><span>${stats.sessions.length}</span></div>
+    <div class="stat-row"><span>Taux global</span><span>${pct}% (${stats.totalCorrect}/${stats.totalQuestions})</span></div>
+    ${stats.examsTotal ? `<div class="stat-row"><span>Examens réussis</span><span>${stats.examsPassed}/${stats.examsTotal}</span></div>` : ''}`;
 }
 
 function registerSW() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
 function updateOfflineStatus() {
-  const el = document.getElementById('offline-status');
+  const el = $('#offline-status');
   if (!el) return;
-  const ready = allQuestions.length > 0;
-  el.textContent = ready
-    ? navigator.onLine
-      ? '✓ Prêt — ' + allQuestions.length + ' questions chargées'
-      : '✈️ Mode hors-ligne — ' + allQuestions.length + ' questions disponibles'
+  el.textContent = allQuestions.length
+    ? `✓ ${allQuestions.length} questions chargées` + (navigator.onLine ? '' : ' · hors-ligne')
     : 'Chargement…';
   el.className = 'offline-status ' + (navigator.onLine ? 'online' : 'offline');
 }
 
 window.addEventListener('online', updateOfflineStatus);
 window.addEventListener('offline', updateOfflineStatus);
-
 document.addEventListener('DOMContentLoaded', init);

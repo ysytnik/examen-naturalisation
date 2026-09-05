@@ -2,6 +2,6 @@
   <rect width="64" height="192" fill="#002395"/>
   <rect x="64" width="64" height="192" fill="#ffffff"/>
   <rect x="128" width="64" height="192" fill="#ED2939"/>
-  <circle cx="96" cy="96" r="40" fill="#002395" opacity="0.9"/>
+  <circle cx="96" cy="96" r="40" fill="#002395"/>
   <text x="96" y="108" text-anchor="middle" font-size="36" font-family="serif" fill="white" font-weight="bold">RF</text>
 </svg>

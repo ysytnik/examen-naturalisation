@@ -1,10 +1,16 @@
 const PASS_THRESHOLD = 0.8;
 const LETTERS = ['A', 'B', 'C', 'D'];
 const THEME_LABELS = {
-  'Principes et valeurs de la République': 'Principes et valeurs',
+  'République': 'Principes et valeurs',
+  'Principes et valeurs de la République française': 'Principes et valeurs',
+  'Laïcité et République': 'Laïcité',
+  'Institutions': 'Institutions',
   'Système institutionnel et politique': 'Institutions',
+  'Union européenne': 'Union européenne',
   'Droits et devoirs': 'Droits et devoirs',
   'Histoire, géographie et culture': 'Histoire & culture',
+  'Histoire et Valeurs': 'Histoire & valeurs',
+  'Culture': 'Culture',
   'Vivre dans la société française': 'Vivre en France',
 };
 

@@ -6,7 +6,7 @@ base = pathlib.Path(__file__).parent
 html = (base / 'index.html').read_text(encoding='utf-8')
 css = (base / 'styles.css').read_text(encoding='utf-8')
 app = (base / 'app.js').read_text(encoding='utf-8')
-questions = json.load(open(base / 'questions_nat.json', encoding='utf-8'))
+questions = json.load(open(base / 'questions_officielles.json', encoding='utf-8'))
 
 html = html.replace('<link rel="manifest" href="manifest.json">\n', '')
 html = html.replace('<link rel="icon" href="icon-192.svg" type="image/svg+xml">\n', '')

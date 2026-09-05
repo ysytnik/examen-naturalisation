@@ -223,20 +223,44 @@ const THEME_LABELS = {
 
 let allQuestions = [];
 let session = { mode: '', questions: [], index: 0, answers: [], isExam: false };
+let initialized = false;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+function showError(msg) {
+  const status = document.getElementById('offline-status');
+  if (status) {
+    status.textContent = 'Erreur : ' + msg;
+    status.className = 'offline-status offline';
+  }
+  const grid = document.querySelector('.mode-grid');
+  if (grid) grid.innerHTML = '<p style="color:#ef4444">Erreur de chargement des questions.</p>';
+}
+
+function safeStorageGet(key, fallback) {
+  try { return localStorage.getItem(key); } catch (e) { return fallback; }
+}
+
+function safeStorageSet(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* iOS file:// may block storage */ }
+}
+
 function init() {
+  if (initialized) return;
+  initialized = true;
+
   try {
     allQuestions = window.QUESTIONS_DATA || [];
-    if (!allQuestions.length) throw new Error('no data');
+    if (!allQuestions.length) throw new Error('questions introuvables');
     populateThemes();
     renderPersistentStats();
+    registerSW();
     updateOfflineStatus();
   } catch (e) {
     console.error(e);
-    $('.mode-grid').innerHTML = '<p style="color:#ef4444">Erreur de chargement des questions.</p>';
+    showError(e.message || 'chargement impossible');
+    return;
   }
 
   $$('.mode-btn').forEach((btn) => btn.addEventListener('click', () => startSession(btn.dataset.mode)));
@@ -247,12 +271,23 @@ function init() {
   $('#btn-home').addEventListener('click', () => showScreen('home'));
 }
 
+function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+}
+
 function populateThemes() {
+  const select = $('#theme-select');
+  if (!select) return;
+  select.length = 1;
   [...new Set(allQuestions.map((q) => q.t))].sort().forEach((t) => {
     const opt = document.createElement('option');
     opt.value = t;
     opt.textContent = THEME_LABELS[t] || t;
-    $('#theme-select').appendChild(opt);
+    select.appendChild(opt);
   });
 }
 
@@ -408,18 +443,22 @@ function renderReview() {
 }
 
 function saveStats(correct, total, isExam, passed) {
-  const stats = JSON.parse(localStorage.getItem('civique_stats') || '{"sessions":[],"totalCorrect":0,"totalQuestions":0,"examsPassed":0,"examsTotal":0}');
-  stats.sessions.push({ date: new Date().toISOString(), mode: session.mode, correct, total, passed: isExam ? passed : null });
-  stats.totalCorrect += correct;
-  stats.totalQuestions += total;
-  if (isExam) { stats.examsTotal++; if (passed) stats.examsPassed++; }
-  stats.sessions = stats.sessions.slice(-50);
-  localStorage.setItem('civique_stats', JSON.stringify(stats));
+  try {
+    const stats = JSON.parse(safeStorageGet('civique_stats', '{"sessions":[],"totalCorrect":0,"totalQuestions":0,"examsPassed":0,"examsTotal":0}'));
+    stats.sessions.push({ date: new Date().toISOString(), mode: session.mode, correct, total, passed: isExam ? passed : null });
+    stats.totalCorrect += correct;
+    stats.totalQuestions += total;
+    if (isExam) { stats.examsTotal++; if (passed) stats.examsPassed++; }
+    stats.sessions = stats.sessions.slice(-50);
+    safeStorageSet('civique_stats', JSON.stringify(stats));
+  } catch (e) { /* ignore storage errors offline */ }
 }
 
 function renderPersistentStats() {
-  const stats = JSON.parse(localStorage.getItem('civique_stats') || 'null');
   const el = $('#stats-summary');
+  if (!el) return;
+  let stats = null;
+  try { stats = JSON.parse(safeStorageGet('civique_stats', 'null')); } catch (e) { return; }
   if (!stats?.sessions?.length) { el.innerHTML = ''; return; }
   const pct = Math.round((stats.totalCorrect / stats.totalQuestions) * 100);
   el.innerHTML = `<h3>📊 Statistiques</h3>
@@ -427,6 +466,8 @@ function renderPersistentStats() {
     <div class="stat-row"><span>Taux global</span><span>${pct}% (${stats.totalCorrect}/${stats.totalQuestions})</span></div>
     ${stats.examsTotal ? `<div class="stat-row"><span>Examens réussis</span><span>${stats.examsPassed}/${stats.examsTotal}</span></div>` : ''}`;
 }
+
+function registerSW() {}
 
 function updateOfflineStatus() {
   const el = $('#offline-status');
@@ -437,7 +478,7 @@ function updateOfflineStatus() {
 
 window.addEventListener('online', updateOfflineStatus);
 window.addEventListener('offline', updateOfflineStatus);
-document.addEventListener('DOMContentLoaded', init);
+boot();
 
 </script>
 </body>
